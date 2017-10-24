@@ -3,10 +3,10 @@
 namespace Roundcube\Composer;
 
 use Composer\Installer\LibraryInstaller;
-use Composer\Package\Version\VersionParser;
-use Composer\Package\LinkConstraint\VersionConstraint;
 use Composer\Package\PackageInterface;
+use Composer\Package\Version\VersionParser;
 use Composer\Repository\InstalledRepositoryInterface;
+use Composer\Semver\Constraint\Constraint as VersionConstraint;
 use Composer\Util\ProcessExecutor;
 
 /**
@@ -14,6 +14,7 @@ use Composer\Util\ProcessExecutor;
  * @package  PluginInstaller
  * @author   Till Klampaeckel <till@php.net>
  * @author   Thomas Bruederli <thomas@roundcube.net>
+ * @author   Laurent Declercq <l.declercq@nuxwin.com>
  * @license  GPL-3.0+
  * @version  GIT: <git_id>
  * @link     http://github.com/roundcube/plugin-installer
@@ -28,7 +29,8 @@ class PluginInstaller extends LibraryInstaller
     public function getInstallPath(PackageInterface $package)
     {
         static $vendorDir;
-        if ($vendorDir === null) {
+
+        if ($vendorDir === NULL) {
             $vendorDir = $this->getVendorDir();
         }
 
@@ -44,31 +46,34 @@ class PluginInstaller extends LibraryInstaller
         parent::install($repo, $package);
 
         // post-install: activate plugin in Roundcube config
-        $config_file = $this->rcubeConfigFile();
-        $plugin_name = $this->getPluginName($package);
-        $plugin_dir = $this->getVendorDir() . DIRECTORY_SEPARATOR . $plugin_name;
+        $configFile = $this->rcubeConfigFile();
+        $pluginName = $this->getPluginName($package);
+        $pluginDir = $this->getVendorDir() . DIRECTORY_SEPARATOR . $pluginName;
         $extra = $package->getExtra();
-        $plugin_name = $this->getPluginName($package);
+        $pluginName = $this->getPluginName($package);
 
-        if (is_writeable($config_file) && php_sapi_name() == 'cli') {
-            $answer = $this->io->askConfirmation("Do you want to activate the plugin $plugin_name? [N|y] ", false);
+        if (is_writeable($configFile) && php_sapi_name() == 'cli') {
+            $answer = $this->io->askConfirmation("Do you want to activate the $pluginName plugin for the i-MSCP Roundcube Webmail Suite? [n|Y] ", true);
             if (true === $answer) {
-                $this->rcubeAlterConfig($plugin_name, true);
+                $this->rcubeAlterConfig($pluginName, true);
             }
         }
 
         // copy config.inc.php.dist -> config.inc.php
-        if (is_file($plugin_dir . DIRECTORY_SEPARATOR . 'config.inc.php.dist') && !is_file($plugin_dir . DIRECTORY_SEPARATOR . 'config.inc.php') && is_writeable($plugin_dir)) {
+        if (is_file($pluginDir . DIRECTORY_SEPARATOR . 'config.inc.php.dist')
+            && !is_file($pluginDir . DIRECTORY_SEPARATOR . 'config.inc.php')
+            && is_writeable($pluginDir)
+        ) {
             $this->io->write("<info>Creating plugin config file</info>");
-            copy($plugin_dir . DIRECTORY_SEPARATOR . 'config.inc.php.dist', $plugin_dir . DIRECTORY_SEPARATOR . 'config.inc.php');
+            copy($pluginDir . DIRECTORY_SEPARATOR . 'config.inc.php.dist', $pluginDir . DIRECTORY_SEPARATOR . 'config.inc.php');
         }
 
         // initialize database schema
-        if (!empty($extra['roundcube']['sql-dir'])) {
-            if ($sqldir = realpath($plugin_dir . DIRECTORY_SEPARATOR . $extra['roundcube']['sql-dir'])) {
-                $this->io->write("<info>Running database initialization script for $plugin_name</info>");
-                system(getcwd() . "/vendor/bin/rcubeinitdb.sh --package=$plugin_name --dir=$sqldir");
-            }
+        if (!empty($extra['roundcube']['sql-dir'])
+            && ($sqlDir = realpath($pluginDir . DIRECTORY_SEPARATOR . $extra['roundcube']['sql-dir']))
+        ) {
+            $this->io->write("<info>Running database initialization script for $pluginName</info>");
+            system(getcwd() . "/vendor/bin/rcubeinitdb.sh --package=$pluginName --dir=$sqlDir");
         }
 
         // run post-install script
@@ -84,17 +89,16 @@ class PluginInstaller extends LibraryInstaller
     {
         $this->rcubeVersionCheck($target);
         parent::update($repo, $initial, $target);
-
         $extra = $target->getExtra();
 
         // trigger updatedb.sh
         if (!empty($extra['roundcube']['sql-dir'])) {
-            $plugin_name = $this->getPluginName($target);
-            $plugin_dir = $this->getVendorDir() . DIRECTORY_SEPARATOR . $plugin_name;
+            $pluginName = $this->getPluginName($target);
+            $pluginDir = $this->getVendorDir() . DIRECTORY_SEPARATOR . $pluginName;
 
-            if ($sqldir = realpath($plugin_dir . DIRECTORY_SEPARATOR . $extra['roundcube']['sql-dir'])) {
-                $this->io->write("<info>Updating database schema for $plugin_name</info>");
-                system(getcwd() . "/bin/updatedb.sh --package=$plugin_name --dir=$sqldir", $res);
+            if ($sqlDir = realpath($pluginDir . DIRECTORY_SEPARATOR . $extra['roundcube']['sql-dir'])) {
+                $this->io->write("<info>Updating database schema for $pluginName</info>");
+                system(getcwd() . "/bin/updatedb.sh --package=$pluginName --dir=$sqlDir", $res);
             }
         }
 
@@ -112,8 +116,8 @@ class PluginInstaller extends LibraryInstaller
         parent::uninstall($repo, $package);
 
         // post-uninstall: deactivate plugin
-        $plugin_name = $this->getPluginName($package);
-        $this->rcubeAlterConfig($plugin_name, false);
+        $pluginName = $this->getPluginName($package);
+        $this->rcubeAlterConfig($pluginName, false);
 
         // run post-uninstall script
         $extra = $package->getExtra();
@@ -131,44 +135,46 @@ class PluginInstaller extends LibraryInstaller
     }
 
     /**
-     * Setup vendor directory to one of these two:
-     *  ./plugins
+     * Return vendor directory
      *
      * @return string
      */
     public function getVendorDir()
     {
-        $pluginDir  = getcwd();
-        $pluginDir .= '/plugins';
-
-        return $pluginDir;
+        return getcwd() . '/plugins';
     }
 
     /**
      * Extract the (valid) plugin name from the package object
+     *
+     * @param PackageInterface $package
+     * @return string
      */
     private function getPluginName(PackageInterface $package)
     {
-        @list($vendor, $pluginName) = explode('/', $package->getPrettyName());
-
+        @list(, $pluginName) = explode('/', $package->getPrettyName());
         return strtr($pluginName, '-', '_');
     }
 
     /**
      * Check version requirements from the "extra" block of a package
      * against the local Roundcube version
+     *
+     * @param PackageInterface $package
+     * @throws \Exception
      */
-    private function rcubeVersionCheck($package)
+    private function rcubeVersionCheck(PackageInterface $package)
     {
         $parser = new VersionParser;
 
         // read rcube version from iniset
-        $rootdir = getcwd();
-        $iniset = @file_get_contents($rootdir . '/program/include/iniset.php');
-        if (preg_match('/define\(.RCMAIL_VERSION.,\s*.([0-9.]+[a-z-]*)?/', $iniset, $m)) {
+        $rootDir = getcwd();
+        $iniSet = @file_get_contents($rootDir . '/program/include/iniset.php');
+
+        if (preg_match('/define\(.RCMAIL_VERSION.,\s*.([0-9.]+[a-z-]*)?/', $iniSet, $m)) {
             $rcubeVersion = $parser->normalize(str_replace('-git', '.999', $m[1]));
         } else {
-            throw new \Exception("Unable to find a Roundcube installation in $rootdir");
+            throw new \Exception("Unable to find a Roundcube installation in $rootDir");
         }
 
         $extra = $package->getExtra();
@@ -179,7 +185,10 @@ class PluginInstaller extends LibraryInstaller
                     $version = $parser->normalize(str_replace('-git', '.999', $extra['roundcube'][$key]));
                     $constraint = new VersionConstraint($operator, $version);
                     if (!$constraint->versionCompare($rcubeVersion, $version, $operator)) {
-                        throw new \Exception("Version check failed! " . $package->getName() . " requires Roundcube version $operator $version, $rcubeVersion was detected.");
+                        throw new \Exception(
+                            "Version check failed! " . $package->getName()
+                            . " requires Roundcube version $operator $version, $rcubeVersion was detected."
+                        );
                     }
                 }
             }
@@ -188,54 +197,57 @@ class PluginInstaller extends LibraryInstaller
 
     /**
      * Add or remove the given plugin to the list of active plugins in the Roundcube config.
+     *
+     * @param string $pluginName
+     * @param bool $add
+     * @return bool|int
      */
-    private function rcubeAlterConfig($plugin_name, $add)
+    private function rcubeAlterConfig($pluginName, $add)
     {
-        $config_file = $this->rcubeConfigFile();
-        @include($config_file);
+        $configFile = $this->rcubeConfigFile();
+        @include($configFile);
         $success = false;
         $varname = '$config';
 
         if (empty($config) && !empty($rcmail_config)) {
-            $config  = $rcmail_config;
+            $config = $rcmail_config;
             $varname = '$rcmail_config';
         }
 
-        if (is_array($config) && is_writeable($config_file)) {
-            $config_templ   = @file_get_contents($config_file) ?: '';
-            $config_plugins = !empty($config['plugins']) ? ((array) $config['plugins']) : array();
-            $active_plugins = $config_plugins;
+        if (is_array($config) && is_writeable($configFile)) {
+            $configTemplate = @file_get_contents($configFile) ?: '';
+            $configPlugins = !empty($config['plugins']) ? ((array)$config['plugins']) : array();
+            $activePlugins = $configPlugins;
 
-            if ($add && !in_array($plugin_name, $active_plugins)) {
-                $active_plugins[] = $plugin_name;
-            } elseif (!$add && ($i = array_search($plugin_name, $active_plugins)) !== false) {
-                unset($active_plugins[$i]);
+            if ($add && !in_array($pluginName, $activePlugins)) {
+                $activePlugins[] = $pluginName;
+            } elseif (!$add && ($i = array_search($pluginName, $activePlugins)) !== false) {
+                unset($activePlugins[$i]);
             }
 
-            if ($active_plugins != $config_plugins) {
-                $count      = 0;
-                $var_export = "array(\n\t'" . join("',\n\t'", $active_plugins) . "',\n);";
-                $new_config = preg_replace(
-                    "/(\\$varname\['plugins'\])\s+=\s+(.+);/Uims",
-                    "\\1 = " . $var_export,
-                    $config_templ, -1, $count);
+            if ($activePlugins != $configPlugins) {
+                $count = 0;
+                $varExport = "array(\n\t'" . join("',\n\t'", $activePlugins) . "',\n);";
+                $newConfig = preg_replace(
+                    "/(\\$varname\['plugins'\])\s+=\s+(.+);/Uims", "\\1 = " . $varExport, $configTemplate, -1, $count
+                );
 
                 // 'plugins' option does not exist yet, add it...
                 if (!$count) {
-                    $var_txt    = "\n{$varname}['plugins'] = $var_export;\n";
-                    $new_config = str_replace('?>', $var_txt . '?>', $config_templ, $count);
+                    $varTxt = "\n{$varname}['plugins'] = $varExport;\n";
+                    $newConfig = str_replace('?>', $varTxt . '?>', $configTemplate, $count);
 
                     if (!$count) {
-                        $new_config = $config_templ . $var_txt;
+                        $newConfig = $configTemplate . $varTxt;
                     }
                 }
 
-                $success = file_put_contents($config_file, $new_config);
+                $success = file_put_contents($configFile, $newConfig);
             }
         }
 
         if ($success && php_sapi_name() == 'cli') {
-            $this->io->write("<info>Updated local config at $config_file</info>");
+            $this->io->write("<info>Updated local config at $configFile</info>");
         }
 
         return $success;
@@ -243,6 +255,8 @@ class PluginInstaller extends LibraryInstaller
 
     /**
      * Helper method to get an absolute path to the local Roundcube config file
+     *
+     * @return bool|string
      */
     private function rcubeConfigFile()
     {
@@ -251,29 +265,31 @@ class PluginInstaller extends LibraryInstaller
 
     /**
      * Run the given script file
+     *
+     * @param $script
+     * @param PackageInterface $package
      */
     private function rcubeRunScript($script, PackageInterface $package)
     {
-        $plugin_name = $this->getPluginName($package);
-        $plugin_dir = $this->getVendorDir() . DIRECTORY_SEPARATOR . $plugin_name;
+        $pluginName = $this->getPluginName($package);
+        $pluginDir = $this->getVendorDir() . DIRECTORY_SEPARATOR . $pluginName;
 
         // check for executable shell script
-        if (($scriptfile = realpath($plugin_dir . DIRECTORY_SEPARATOR . $script)) && is_executable($scriptfile)) {
-            $script = $scriptfile;
+        if (($scriptFile = realpath($pluginDir . DIRECTORY_SEPARATOR . $script)) && is_executable($scriptFile)) {
+            $script = $scriptFile;
         }
 
-        // run PHP script in Roundcube context
-        if ($scriptfile && preg_match('/\.php$/', $scriptfile)) {
+        if ($scriptFile && preg_match('/\.php$/', $scriptFile)) {
+            // run PHP script in Roundcube context
             $incdir = realpath(getcwd() . '/program/include');
             include_once($incdir . '/iniset.php');
-            include($scriptfile);
-        }
-        // attempt to execute the given string as shell commands
-        else {
+            include($scriptFile);
+        } else {
+            // attempt to execute the given string as shell commands
             $process = new ProcessExecutor($this->io);
-            $exitCode = $process->execute($script, null, $plugin_dir);
+            $exitCode = $process->execute($script, $output, $pluginDir);
             if ($exitCode !== 0) {
-                throw new \RuntimeException('Error executing script: '. $process->getErrorOutput(), $exitCode);
+                throw new \RuntimeException('Error executing script: ' . $process->getErrorOutput(), $exitCode);
             }
         }
     }

@@ -1,4 +1,6 @@
-# Plugin Installer for Roundcube
+# i-MSCP Plugin Installer for Roundcube
+
+This installer is a drop-in replacement for the roundcube/plugin-installer.
 
 This installer ensures that plugins end up in the correct directory:
 
@@ -29,7 +31,7 @@ This installer ensures that plugins end up in the correct directory:
             }
         ]
         "require": {
-            "roundcube/plugin-installer": "*"
+            "imscp/roundcube-plugin-installer": "^1.0"
         },
         "minimum-stability": "dev-master"
     }
