@@ -3,7 +3,6 @@
     "description": "i-MSCP composer-installer for Roundcube plugins.",
     "type": "composer-installer",
     "license": "GPL-3.0+",
-    "version": "1.0.0",
     "authors": [
         {
             "name": "Thomas Bruederli",
