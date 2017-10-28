@@ -2,7 +2,7 @@
 
 This installer is a drop-in replacement for the roundcube/plugin-installer.
 
-See the [README.md](README.md) file for list of changes.
+See the [CHANGELOG.md](CHANGELOG.md) file for list of changes.
 
 This installer ensures that plugins end up in the correct directory:
 
