@@ -257,7 +257,7 @@ class PluginInstaller extends LibraryInstaller
                 } else {
                     // No active plugins; empty plugin list
                     $newConfig = preg_replace(
-                        "/(\\$varname\s*\[\s*['\"]plugins['\"]\s*\])\s*=\s*(.*);/Uis", "\1 = array();",
+                        "/(\\$varname\s*\[\s*['\"]plugins['\"]\s*\])\s*=\s*(.*);/Uis", "\\1 = array();",
                         $configTemplate,
                         -1,
                         $count
