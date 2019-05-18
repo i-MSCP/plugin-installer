@@ -2,7 +2,13 @@
 
 All notable changes to this project will be documented in this file, in reverse chronological order by release.
 
-## 1.0.1
+## 1.0.2 20190518
+
+### Fixed
+
+- Missing backslash in regexp
+
+## 1.0.1 20171028
 
 ### Fixed
 
